@@ -19,7 +19,6 @@ from model import StreamSpeech, AdvancedDataProcessor
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class ModelConfig:
     input_dim: int
@@ -33,7 +32,6 @@ class ModelConfig:
     upsampling_rate: int
     dropout: float
 
-
 @dataclass
 class TrainingConfig:
     epochs: int
@@ -43,7 +41,6 @@ class TrainingConfig:
     max_grad_norm: float
     model_save_path: str
 
-
 @dataclass
 class DataConfig:
     sample_rate: int
@@ -51,13 +48,11 @@ class DataConfig:
     stft: dict
     wav2vec_model: str
 
-
 @dataclass
 class Config:
     model: ModelConfig
     training: TrainingConfig
     data: DataConfig
-
 
 # Embedded configuration
 DEFAULT_CONFIG = {
@@ -100,8 +95,8 @@ DEFAULT_CONFIG = {
     }
 }
 
-
-def load_config(config_path: str = None) -> Config:
+def load_config(config_path: Optional[str] = None) -> Config:
+    """Load configuration from file or use default."""
     if config_path:
         with open(config_path, 'r') as f:
             config_dict = json.load(f)
@@ -112,7 +107,6 @@ def load_config(config_path: str = None) -> Config:
         training=TrainingConfig(**config_dict['training']),
         data=DataConfig(**config_dict['data'])
     )
-
 
 class SpeechDataset(Dataset):
     def __init__(self, data_dir: str):
@@ -126,8 +120,8 @@ class SpeechDataset(Dataset):
         data = torch.load(os.path.join(self.data_dir, self.file_names[idx]))
         return data['mel'], data['wav2vec']
 
-
 def prepare_data(config: Config, input_dir: str, output_dir: str) -> None:
+    """Prepare data for training."""
     processor = AdvancedDataProcessor(config.data)
     os.makedirs(output_dir, exist_ok=True)
 
@@ -141,15 +135,13 @@ def prepare_data(config: Config, input_dir: str, output_dir: str) -> None:
 
             torch.save({'mel': mel_spectrogram, 'wav2vec': wav2vec_features}, output_path)
 
-
 def train(config: Config, model: nn.Module, data_dir: str) -> None:
-    device = torch.device(
-        "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
+    """Train the model."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
 
     dataset = SpeechDataset(data_dir)
-    dataloader = DataLoader(dataset, batch_size=config.training.batch_size, shuffle=True, num_workers=4,
-                            pin_memory=True)
+    dataloader = DataLoader(dataset, batch_size=config.training.batch_size, shuffle=True, num_workers=4, pin_memory=True)
 
     optimizer = torch.optim.AdamW(
         model.parameters(),
@@ -175,10 +167,8 @@ def train(config: Config, model: nn.Module, data_dir: str) -> None:
                 asr_ctc_output, s2tt_ctc_output, decoder_output, t2u_output = model(mel, wav2vec)
 
                 loss = sum([
-                    ctc_loss(asr_ctc_output.transpose(0, 1), wav2vec, [wav2vec.size(1)] * wav2vec.size(0),
-                             [asr_ctc_output.size(1)] * asr_ctc_output.size(0)),
-                    ctc_loss(s2tt_ctc_output.transpose(0, 1), wav2vec, [wav2vec.size(1)] * wav2vec.size(0),
-                             [s2tt_ctc_output.size(1)] * s2tt_ctc_output.size(0)),
+                    ctc_loss(asr_ctc_output.transpose(0, 1), wav2vec, [wav2vec.size(1)] * wav2vec.size(0), [asr_ctc_output.size(1)] * asr_ctc_output.size(0)),
+                    ctc_loss(s2tt_ctc_output.transpose(0, 1), wav2vec, [wav2vec.size(1)] * wav2vec.size(0), [s2tt_ctc_output.size(1)] * s2tt_ctc_output.size(0)),
                     ce_loss(decoder_output.view(-1, decoder_output.size(-1)), wav2vec.view(-1)),
                     ce_loss(t2u_output.view(-1, t2u_output.size(-1)), wav2vec.view(-1))
                 ])
@@ -200,10 +190,9 @@ def train(config: Config, model: nn.Module, data_dir: str) -> None:
             torch.save(model.state_dict(), config.training.model_save_path)
             logger.info(f"New best model saved to {config.training.model_save_path}")
 
-
 def inference(config: Config, model: nn.Module, input_file: str, processor: AdvancedDataProcessor) -> np.ndarray:
-    device = torch.device(
-        "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
+    """Run inference on input file."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     model.eval()
 
@@ -219,8 +208,8 @@ def inference(config: Config, model: nn.Module, input_file: str, processor: Adva
 
     return s2tt_output.squeeze().cpu().numpy()
 
-
 def parse_arguments():
+    """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="StreamSpeech Model")
     parser.add_argument('--config', type=str, help='Path to configuration file')
     parser.add_argument('--mode', choices=['prepare', 'train', 'inference'], required=True,
@@ -228,50 +217,16 @@ def parse_arguments():
     parser.add_argument('--input_dir', help='Input directory for data preparation or inference')
     parser.add_argument('--output_dir', help='Output directory for data preparation or inference results')
 
-    # Parse known args first
     args = parser.parse_args()
 
-    # Check for unknown arguments
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(1)
 
     return args
 
-
-def handle_prepare_mode(config, args):
-    if not args.input_dir or not args.output_dir:
-        logger.error("Both --input_dir and --output_dir are required for 'prepare' mode")
-        sys.exit(1)
-    prepare_data(config, args.input_dir, args.output_dir)
-
-
-def handle_train_mode(config, args):
-    if not args.input_dir:
-        logger.error("--input_dir is required for 'train' mode")
-        sys.exit(1)
-    model = StreamSpeech(config.model)
-    train(config, model, args.input_dir)
-
-
-def handle_inference_mode(config, args):
-    if not args.input_dir or not args.output_dir:
-        logger.error("Both --input_dir and --output_dir are required for 'inference' mode")
-        sys.exit(1)
-    model = StreamSpeech(config.model)
-    try:
-        model.load_state_dict(torch.load(config.training.model_save_path))
-    except FileNotFoundError:
-        logger.error(f"Model file not found: {config.training.model_save_path}")
-        sys.exit(1)
-    processor = AdvancedDataProcessor(config.data)
-    output = inference(config, model, args.input_dir, processor)
-    output_path = os.path.join(args.output_dir, 'inference_output.npy')
-    np.save(output_path, output)
-    logger.info(f"Inference output saved to {output_path}")
-
-
 def main():
+    """Main function to run the StreamSpeech model."""
     args = parse_arguments()
 
     try:
@@ -284,12 +239,31 @@ def main():
         sys.exit(1)
 
     if args.mode == 'prepare':
-        handle_prepare_mode(config, args)
+        if not args.input_dir or not args.output_dir:
+            logger.error("Both --input_dir and --output_dir are required for 'prepare' mode")
+            sys.exit(1)
+        prepare_data(config, args.input_dir, args.output_dir)
     elif args.mode == 'train':
-        handle_train_mode(config, args)
+        if not args.input_dir:
+            logger.error("--input_dir is required for 'train' mode")
+            sys.exit(1)
+        model = StreamSpeech(config.model)
+        train(config, model, args.input_dir)
     elif args.mode == 'inference':
-        handle_inference_mode(config, args)
-
+        if not args.input_dir or not args.output_dir:
+            logger.error("Both --input_dir and --output_dir are required for 'inference' mode")
+            sys.exit(1)
+        model = StreamSpeech(config.model)
+        try:
+            model.load_state_dict(torch.load(config.training.model_save_path))
+        except FileNotFoundError:
+            logger.error(f"Model file not found: {config.training.model_save_path}")
+            sys.exit(1)
+        processor = AdvancedDataProcessor(config.data)
+        output = inference(config, model, args.input_dir, processor)
+        output_path = os.path.join(args.output_dir, 'inference_output.npy')
+        np.save(output_path, output)
+        logger.info(f"Inference output saved to {output_path}")
 
 if __name__ == "__main__":
     main()
