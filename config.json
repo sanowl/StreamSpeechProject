@@ -1,0 +1,39 @@
+{
+  "model": {
+    "input_dim": 80,
+    "hidden_dim": 256,
+    "num_heads": 4,
+    "ffn_dim": 1024,
+    "num_layers": 12,
+    "kernel_size": 31,
+    "chunk_size": 50,
+    "vocab_size": 10000,
+    "upsampling_rate": 25,
+    "dropout": 0.1
+  },
+  "training": {
+    "epochs": 100,
+    "batch_size": 32,
+    "learning_rate": 0.0005,
+    "weight_decay": 0.01,
+    "max_grad_norm": 1.0,
+    "model_save_path": "streamspeech_model.pth"
+  },
+  "data": {
+    "sample_rate": 16000,
+    "mel": {
+      "n_mels": 80,
+      "n_fft": 400,
+      "hop_length": 160,
+      "fmin": 0,
+      "fmax": 8000
+    },
+    "stft": {
+      "n_fft": 400,
+      "hop_length": 160,
+      "win_length": 400,
+      "window": "hann"
+    },
+    "wav2vec_model": "facebook/wav2vec2-base-960h"
+  }
+}
